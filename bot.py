@@ -997,4 +997,5 @@ def run_bot() -> None:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))  # Echo non-command messages
     application.run_polling()
 
-run_bot()
+if __name__ == "__main__":
+    run_bot()
