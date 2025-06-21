@@ -519,17 +519,21 @@ class MessageService:
     def __init__(self):
         self.notifier = TelegramNotifier(bot_token, chat_id)
 
+    def notify(self, message):
+        """Base method for sending notifications"""
+        return self.notifier.send_message(message)
+
     def notify_bot_started(self, bot_name, symbol, amount, mode, email):
         message = f"BOT *{bot_name}* Started ```{symbol} {amount} {mode} {email} ```"
-        return self.notifier.send_message(message)
+        return self.notify(message)
 
     def notify_order_executed(self, bot_name, command, symbol, price, last_price, timestamp):
         message = f"_{bot_name}_ Executed `{command}` {symbol} at price *{price}* . last price : *{last_price}* || Time : *{timestamp}*"
-        return self.notifier.send_message(message)
+        return self.notify(message)
 
     def notify_error(self, bot_name, mode, error_message):
         message = f"_{bot_name}_ *{mode} Mode* Unexpected error: {error_message}"
-        return self.notifier.send_message(message)
+        return self.notify(message)
 
 def get_active_threads():
     if not Traderbot._active_threads:
@@ -924,4 +928,3 @@ def run_bot() -> None:
 
 if __name__ == "__main__":
     run_bot()
-
