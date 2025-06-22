@@ -542,6 +542,46 @@ class UserManager:
             "preferred_currency": "USD"
         }
 
+class TradingParameters:
+    def __init__(self):
+        self._take_profit_percent = 0.0
+        self._stop_loss_percent = 0.0
+        self._observers = []
+    
+    def register_observer(self, observer):
+        """Register an observer to be notified of parameter changes"""
+        if observer not in self._observers:
+            self._observers.append(observer)
+    
+    def unregister_observer(self, observer):
+        """Unregister an observer"""
+        if observer in self._observers:
+            self._observers.remove(observer)
+    
+    def set_take_profit(self, percent):
+        """Set take profit percentage and notify observers"""
+        self._take_profit_percent = percent
+        self._notify_observers('take_profit', percent)
+    
+    def set_stop_loss(self, percent):
+        """Set stop loss percentage and notify observers"""
+        self._stop_loss_percent = percent
+        self._notify_observers('stop_loss', percent)
+    
+    def get_take_profit(self):
+        """Get current take profit percentage"""
+        return self._take_profit_percent
+    
+    def get_stop_loss(self):
+        """Get current stop loss percentage"""
+        return self._stop_loss_percent
+    
+    def _notify_observers(self, parameter_type, value):
+        """Notify all observers of a parameter change"""
+        for observer in self._observers:
+            if hasattr(observer, 'update_parameter'):
+                observer.update_parameter(parameter_type, value)
+
 class Traderbot(threading.Thread):
     _active_threads = []  # Class-level list to store all active threads
     def __init__(self,id_t="Undefined",symbol="BTCUSDT",tp=0.0,sl=0.0,amount=0.00011,mode="Simulation",listener_email="any"):
@@ -820,6 +860,15 @@ class Traderbot(threading.Thread):
     def set_ST(self, stop_loss_percent):
         self.stop_loss_percent = stop_loss_percent
 
+    def update_parameter(self, parameter_type, value):
+        """Update trading parameters (Observer pattern)"""
+        if parameter_type == 'take_profit':
+            self.take_profit_percent = value
+            log_event('info', f"Bot {self.name}: Take profit updated to {value}%")
+        elif parameter_type == 'stop_loss':
+            self.stop_loss_percent = value
+            log_event('info', f"Bot {self.name}: Stop loss updated to {value}%")
+
 class TelegramNotifier:
     def __init__(self, bot_token, chat_id):
         self.bot_token = bot_token
@@ -970,9 +1019,12 @@ async def handle_takeprofit_selection(update: Update, context: ContextTypes.DEFA
         await query.edit_message_text(text="You're not authorized to use this bot.")
 
 def set_tp_func(selected_take_profit):
+    trading_params = TradingParameters()
+    
     for thread in Traderbot._active_threads:
-        if thread.name==selected_bot_name:
-            thread.set_TP(selected_take_profit)
+        trading_params.register_observer(thread)
+    
+    trading_params.set_take_profit(selected_take_profit)
 
 async def set_st(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if str(update.message.chat_id) in user_manager.users:
@@ -997,9 +1049,12 @@ async def handle_stoploss_selection(update: Update, context: ContextTypes.DEFAUL
         await query.edit_message_text(text="You're not authorized to use this bot.")
 
 def set_st_func(selected_stop_loss):
+    trading_params = TradingParameters()
+    
     for thread in Traderbot._active_threads:
-        if thread.name==selected_bot_name:
-            thread.set_ST(selected_stop_loss)
+        trading_params.register_observer(thread)
+    
+    trading_params.set_stop_loss(selected_stop_loss)
 
 async def list_signals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: 
     if str(update.message.chat_id) in user_manager.users:
