@@ -242,18 +242,41 @@ def get_account_balance():
 
 @rate_limit(calls_per_second=5)  
 def get_usdt_to_rub(amount):
-    try:
-        # Get USDT to RUB conversion rate
-        usdt_to_rub_url = f"https://v6.exchangerate-api.com/v6/{EXCHANGE_RATE_API_KEY}/latest/USD" 
-        rub_response = requests.get(usdt_to_rub_url)
-        usd_to_rub_rate = float(rub_response.json()['conversion_rates']['RUB'])
+    """Convert USDT amount to RUB using exchange rate API"""
+    if amount is None or amount <= 0:
+        log_event('error', f"Invalid amount for conversion: {amount}")
+        return 0
         
-        # Calculate total coin to RUB
-        total_rub = amount * usd_to_rub_rate
-        return total_rub
+    try:
+        return _fetch_and_calculate_rub_value(amount)
     except requests.exceptions.RequestException as e:
-        log_event('error', f"Error fetching data: {e}")
-        return None
+        log_event('error', f"Error fetching exchange rate data: {e}")
+        return _fallback_conversion(amount)
+    except (KeyError, ValueError) as e:
+        log_event('error', f"Error processing exchange rate data: {e}")
+        return _fallback_conversion(amount)
+    except Exception as e:
+        log_event('error', f"Unexpected error in currency conversion: {e}")
+        return _fallback_conversion(amount)
+
+def _fetch_and_calculate_rub_value(amount):
+    """Fetch exchange rate and calculate RUB value"""
+    usdt_to_rub_url = f"https://v6.exchangerate-api.com/v6/{EXCHANGE_RATE_API_KEY}/latest/USD" 
+    rub_response = requests.get(usdt_to_rub_url)
+    
+    if rub_response.status_code != 200:
+        raise requests.exceptions.RequestException(f"API returned status code {rub_response.status_code}")
+        
+    exchange_data = rub_response.json()
+    usd_to_rub_rate = float(exchange_data['conversion_rates']['RUB'])
+    return amount * usd_to_rub_rate
+
+def _fallback_conversion(amount):
+    """Fallback conversion using a fixed rate when API fails"""
+    # Use a fixed fallback rate (should be updated periodically)
+    fallback_rate = 75.0  # Example fallback rate
+    log_event('info', f"Using fallback conversion rate: {fallback_rate}")
+    return amount * fallback_rate
 
 @rate_limit(calls_per_second=5)
 def send_telegram_message(message):
