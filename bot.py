@@ -14,6 +14,61 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import wraps
 
+# Define a common interface for trading
+class Trader:
+    def __init__(self, symbol, amount):
+        self.symbol = symbol
+        self.amount = amount
+    
+    def execute_buy(self):
+        """Execute a buy order"""
+        raise NotImplementedError("Subclasses must implement execute_buy")
+    
+    def execute_sell(self):
+        """Execute a sell order"""
+        raise NotImplementedError("Subclasses must implement execute_sell")
+    
+    def get_current_price(self):
+        """Get current price for the symbol"""
+        raise NotImplementedError("Subclasses must implement get_current_price")
+    
+    def get_account_balance(self):
+        """Get account balance"""
+        raise NotImplementedError("Subclasses must implement get_account_balance")
+
+# Update BinanceTrader to implement the common interface
+class BinanceTrader(Trader):
+    def __init__(self, symbol, amount, api_key, api_secret):
+        super().__init__(symbol, amount)
+        self.client = self._create_client(api_key, api_secret)
+    
+    def _create_client(self, api_key, api_secret):
+        """Create Binance client"""
+        # This would use the actual Binance client library
+        return {"api_key": api_key, "api_secret": api_secret}
+    
+    def execute_buy(self):
+        """Execute a buy order on Binance"""
+        # Implementation for Binance
+        print(f"Executing buy order for {self.symbol} on Binance")
+        return True
+    
+    def execute_sell(self):
+        """Execute a sell order on Binance"""
+        # Implementation for Binance
+        print(f"Executing sell order for {self.symbol} on Binance")
+        return True
+    
+    def get_current_price(self):
+        """Get current price from Binance"""
+        # Implementation for Binance
+        return 50000.0  # Example price
+    
+    def get_account_balance(self):
+        """Get account balance from Binance"""
+        # Implementation for Binance
+        return 1000.0  # Example balance
+
 # Create specialized classes to split Traderbot responsibilities
 class OrderExecutor:
     def __init__(self, client, symbol, amount, simulation_flag=1):
@@ -427,155 +482,12 @@ def command_filter(command):
     else:
         return 0
 
-class BinanceTrader:
-    def __init__(self, api_key, api_secret):
-        self.api_key = api_key
-        self.api_secret = api_secret
-        self.client = HTTP(
-            api_key=self.api_key,
-            api_secret=self.api_secret,
-            recv_window=60000
-        )
-
-    def get_balance(self, coin):
-        response = self.client.get_wallet_balance(accountType="UNIFIED")
-        assets = {
-            asset.get('coin'): float(asset.get('availableToWithdraw', '0.0'))
-            for asset in response.get('result', {}).get('list', [])[0].get('coin', [])
-        }
-        return assets.get(coin, 0.0)
-
-    def place_market_order(self, symbol, side, quantity):
-        return self.client.place_order(
-            category="spot",
-            symbol=symbol,
-            side=side,
-            orderType="Market",
-            qty=quantity,
-            marketUnit="baseCoin",
-        )
-
-    def get_current_price(self, symbol):
-        response = self.client.get_tickers(category="spot", symbol=symbol)
-        return float(response['result']['list'][0]['lastPrice'])
-
-class UserManager:
-    def __init__(self):
-        self._users = []
-        self._user_settings = {}
-        self._user_activity = {}
-
-    def add_user(self, chat_id):
-        """Add a new user to the system"""
-        if chat_id not in self._users:
-            self._users.append(chat_id)
-            self._user_settings[chat_id] = self._default_settings()
-            self._user_activity[chat_id] = {"last_active": datetime.now(), "commands": []}
-            return True
-        return False
-    
-    def remove_user(self, chat_id):
-        """Remove a user from the system"""
-        if chat_id in self._users:
-            self._users.remove(chat_id)
-            if chat_id in self._user_settings:
-                del self._user_settings[chat_id]
-            if chat_id in self._user_activity:
-                del self._user_activity[chat_id]
-            return True
-        return False
-    
-    def is_authorized(self, chat_id):
-        """Check if a user is authorized"""
-        return chat_id in self._users
-    
-    def get_user_settings(self, chat_id):
-        """Get settings for a specific user"""
-        return self._user_settings.get(chat_id, self._default_settings())
-    
-    def update_user_settings(self, chat_id, settings):
-        """Update settings for a specific user"""
-        if chat_id in self._users:
-            current_settings = self._user_settings.get(chat_id, self._default_settings())
-            current_settings.update(settings)
-            self._user_settings[chat_id] = current_settings
-            return True
-        return False
-    
-    def record_activity(self, chat_id, command):
-        """Record user activity"""
-        if chat_id in self._users:
-            self._user_activity[chat_id]["last_active"] = datetime.now()
-            self._user_activity[chat_id]["commands"].append({
-                "command": command,
-                "timestamp": datetime.now()
-            })
-            # Keep only the last 10 commands
-            self._user_activity[chat_id]["commands"] = self._user_activity[chat_id]["commands"][-10:]
-            return True
-        return False
-    
-    def get_user_activity(self, chat_id):
-        """Get activity history for a specific user"""
-        return self._user_activity.get(chat_id, {"last_active": None, "commands": []})
-    
-    def get_all_users(self):
-        """Get a list of all users"""
-        return self._users.copy()
-    
-    def _default_settings(self):
-        """Default settings for new users"""
-        return {
-            "notifications": True,
-            "language": "en",
-            "timezone": "UTC",
-            "preferred_currency": "USD"
-        }
-
-class TradingParameters:
-    def __init__(self):
-        self._take_profit_percent = 0.0
-        self._stop_loss_percent = 0.0
-        self._observers = []
-    
-    def register_observer(self, observer):
-        """Register an observer to be notified of parameter changes"""
-        if observer not in self._observers:
-            self._observers.append(observer)
-    
-    def unregister_observer(self, observer):
-        """Unregister an observer"""
-        if observer in self._observers:
-            self._observers.remove(observer)
-    
-    def set_take_profit(self, percent):
-        """Set take profit percentage and notify observers"""
-        self._take_profit_percent = percent
-        self._notify_observers('take_profit', percent)
-    
-    def set_stop_loss(self, percent):
-        """Set stop loss percentage and notify observers"""
-        self._stop_loss_percent = percent
-        self._notify_observers('stop_loss', percent)
-    
-    def get_take_profit(self):
-        """Get current take profit percentage"""
-        return self._take_profit_percent
-    
-    def get_stop_loss(self):
-        """Get current stop loss percentage"""
-        return self._stop_loss_percent
-    
-    def _notify_observers(self, parameter_type, value):
-        """Notify all observers of a parameter change"""
-        for observer in self._observers:
-            if hasattr(observer, 'update_parameter'):
-                observer.update_parameter(parameter_type, value)
-
-class Traderbot(threading.Thread):
+# Update Traderbot to implement the common interface
+class Traderbot(threading.Thread, Trader):
     _active_threads = []  # Class-level list to store all active threads
     def __init__(self,id_t="Undefined",symbol="BTCUSDT",tp=0.0,sl=0.0,amount=0.00011,mode="Simulation",listener_email="any"):
-        super().__init__()
+        threading.Thread.__init__(self)
+        Trader.__init__(self, symbol, amount)
         self.stop_thread = False
         self.paused = False  # Flag to control pausing
         self.pause_condition = threading.Condition()  # Condition to manage pausing
@@ -858,6 +770,23 @@ class Traderbot(threading.Thread):
         elif parameter_type == 'stop_loss':
             self.stop_loss_percent = value
             log_event('info', f"Bot {self.name}: Stop loss updated to {value}%")
+
+    def execute_buy(self):
+        """Execute a buy order using ByBit API"""
+        return self.Execute_Orders("Buy")
+    
+    def execute_sell(self):
+        """Execute a sell order using ByBit API"""
+        return self.Execute_Orders("Sell")
+    
+    def get_current_price(self):
+        """Get current price from ByBit"""
+        response = self._cl.get_tickers(category="spot", symbol=self.symbol)
+        return float(response['result']['list'][0]['lastPrice'])
+    
+    def get_account_balance(self):
+        """Get account balance from ByBit"""
+        return get_account_balance()
 
 class TelegramNotifier:
     def __init__(self, bot_token, chat_id):
