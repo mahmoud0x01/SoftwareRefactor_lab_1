@@ -101,6 +101,79 @@ class MarketMonitor:
         take_profit_price = last_price * (1 + (take_profit_percent / 100))
         return current_price >= take_profit_price
 
+class MarketAnalyzer:
+    def __init__(self, client, symbol):
+        self.client = client
+        self.symbol = symbol
+    
+    def analyze_market_trends(self, timeframe='1h', lookback_periods=14):
+        """Analyze market trends using price data"""
+        try:
+            # Get historical price data
+            kline_data = self.client.get_kline(
+                category="spot",
+                symbol=self.symbol,
+                interval=timeframe,
+                limit=lookback_periods
+            )
+            
+            if 'result' not in kline_data or 'list' not in kline_data['result']:
+                return {'trend': 'unknown', 'strength': 0}
+            
+            # Extract closing prices
+            closes = [float(candle[4]) for candle in kline_data['result']['list']]
+            
+            # Calculate simple moving averages
+            short_ma = sum(closes[-5:]) / 5 if len(closes) >= 5 else sum(closes) / len(closes)
+            long_ma = sum(closes) / len(closes)
+            
+            # Determine trend direction and strength
+            trend = 'bullish' if short_ma > long_ma else 'bearish'
+            strength = abs((short_ma / long_ma - 1) * 100)
+            
+            return {
+                'trend': trend,
+                'strength': strength,
+                'short_ma': short_ma,
+                'long_ma': long_ma
+            }
+            
+        except Exception as e:
+            log_event('error', f"Error analyzing market trends: {e}")
+            return {'trend': 'unknown', 'strength': 0}
+    
+    def get_support_resistance_levels(self, timeframe='1d', lookback_periods=30):
+        """Identify support and resistance levels"""
+        try:
+            # Implementation of support/resistance detection
+            # This would be a simplified version
+            kline_data = self.client.get_kline(
+                category="spot",
+                symbol=self.symbol,
+                interval=timeframe,
+                limit=lookback_periods
+            )
+            
+            if 'result' not in kline_data or 'list' not in kline_data['result']:
+                return {'support': [], 'resistance': []}
+            
+            # Extract high and low prices
+            highs = [float(candle[2]) for candle in kline_data['result']['list']]
+            lows = [float(candle[3]) for candle in kline_data['result']['list']]
+            
+            # Simple implementation - just use min/max as support/resistance
+            support = min(lows)
+            resistance = max(highs)
+            
+            return {
+                'support': support,
+                'resistance': resistance
+            }
+            
+        except Exception as e:
+            log_event('error', f"Error finding support/resistance: {e}")
+            return {'support': [], 'resistance': []}
+
 bot_token = "000000:00000" # TOKEN EXAMPLE
 chat_id = 00000000 # CHAT ID EXAMPLE
 domain_name = ""
@@ -283,6 +356,7 @@ class Traderbot(threading.Thread):
         )
         self.order_executor = OrderExecutor(self.cl, self.symbol, self.amount, self.Simulation_flag)
         self.market_monitor = MarketMonitor(self.cl, self.symbol)
+        self.market_analyzer = MarketAnalyzer(self.cl, self.symbol)
 
         Traderbot._active_threads.append(self)  # Add this thread to the active threads list
 
@@ -734,7 +808,7 @@ def show_bot_status_func(bot_name):
             current_price = float(response['result']['list'][0]['lastPrice'])
             if (thread.last_command_received == "Buy" or thread.order_counter != 0 ):      
                 current_pl = ((current_price*thread.amount) / thread.last_price) - thread.amount
-                current_pl = current_pl - (thread.amount * (1 * 0.001 ))
+                current_pl = current_pl - (thread.amount * (1 * 00.1 ))
                 current_pl_percentage = (current_pl / thread.amount) * 100
                 current_pl_percentage = round(current_pl_percentage,3)
                 current_pl = current_pl * current_price  
