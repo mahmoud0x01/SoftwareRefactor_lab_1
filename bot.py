@@ -379,32 +379,57 @@ class Traderbot(threading.Thread):
         self.amount = amount
         self.mode = (str(mode)).replace(" ", "") # Real , Simulation
         self.running = True  # Flag to control the loop in func1 and func2
-        self.last_command_received = "Sell"
-        self.last_price = 1.0
-        self.accumulated_percentage_change = 0.0
-        self.last_buy_price = 0.0
+        self._last_command_received = "Sell"
+        self._last_price = 1.0
+        self._accumulated_percentage_change = 0.0
+        self._last_buy_price = 0.0
         self.listener_email = listener_email
-        self.skip_next_signal = 0
+        self._skip_next_signal = 0
         self.domain_name = domain_name
-        self.order_counter = 0
-        self.wins = 0
-        self.loses = 0 
+        self._order_counter = 0
+        self._wins = 0 
+        self._loses = 0 
         self.take_profit_percent = tp
         self.stop_loss_percent = sl
         if (self.mode == "Real"):
-            self.Simulation_flag = 0
+            self._simulation_flag = 0
         elif (self.mode == "Simulation"):
-            self.Simulation_flag = 1
-        self.cl = HTTP(
+            self._simulation_flag = 1
+        self._cl = self._create_client()
+        self.order_executor = OrderExecutor(self._cl, self.symbol, self.amount, self._simulation_flag)
+        self.market_monitor = MarketMonitor(self._cl, self.symbol)
+        self.market_analyzer = MarketAnalyzer(self._cl, self.symbol)
+
+        Traderbot._active_threads.append(self)  # Add this thread to the active threads list
+
+    def _create_client(self):
+        """Factory method to create API client"""
+        return HTTP(
             api_key=BB_API_KEY,
             api_secret=BB_SECRET_KEY,
             recv_window=60000
         )
-        self.order_executor = OrderExecutor(self.cl, self.symbol, self.amount, self.Simulation_flag)
-        self.market_monitor = MarketMonitor(self.cl, self.symbol)
-        self.market_analyzer = MarketAnalyzer(self.cl, self.symbol)
 
-        Traderbot._active_threads.append(self)  # Add this thread to the active threads list
+    def get_last_price(self):
+        return self._last_price
+        
+    def get_last_command(self):
+        return self._last_command_received
+        
+    def get_order_counter(self):
+        return self._order_counter
+        
+    def get_wins(self):
+        return self._wins
+        
+    def get_losses(self):
+        return self._loses
+        
+    def get_accumulated_percentage_change(self):
+        return self._accumulated_percentage_change
+        
+    def is_simulation(self):
+        return self._simulation_flag == 1
 
     def truncate_float(self,value, precision):
         if ( precision > 4):
@@ -463,20 +488,20 @@ class Traderbot(threading.Thread):
         Body_plain_New = getmessagedata(storage_key)
         command = command_filter(Body_plain_New)
         
-        if command != self.last_command_received:
-            if self.skip_next_signal == 0:
+        if command != self._last_command_received:
+            if self._skip_next_signal == 0:
                 result = self.Execute_Orders(command)
                 if result == 1:
                     return
                 send_telegram_message("----------------------------------------")
             else:
-                self.skip_next_signal = 0
+                self._skip_next_signal = 0
         
-        self.last_command_received = command
+        self._last_command_received = command
 
     @rate_limit(calls_per_second=5)  
     def Execute_Orders(self,command):
-        success, message = self.order_executor.execute_order(command, self.last_price)
+        success, message = self.order_executor.execute_order(command, self._last_price)
         if not success:
             send_telegram_message(f"_{self.name}_ *{self.mode} Mode* : {message}")
             log_event('error', f"_{self.name}_ *{self.mode} Mode* : {message}")
@@ -485,29 +510,29 @@ class Traderbot(threading.Thread):
         current_utc_time = datetime.utcnow()
         gmt_plus_7_time = current_utc_time + timedelta(hours=7)
         timestamp_of_order = gmt_plus_7_time.strftime("%Y-%m-%d %H:%M:%S")
-        self.order_counter = self.order_counter + 1 
+        self._order_counter = self._order_counter + 1 
 
         try:
-            response = self.cl.get_tickers(category="spot", symbol=f"{self.symbol}")
+            response = self._cl.get_tickers(category="spot", symbol=f"{self.symbol}")
             current_price = float(response['result']['list'][0]['lastPrice'])
             resultoftrade = "" 
             if(command == "Sell" ):
-                percentage_change = ((current_price - self.last_price) / self.last_price) * 100
-                self.accumulated_percentage_change += percentage_change
+                percentage_change = ((current_price - self._last_price) / self._last_price) * 100
+                self._accumulated_percentage_change += percentage_change
                 if percentage_change > 0:
                     resultoftrade = f"☘☘ Profit: +{percentage_change:.2f}%"
-                    self.wins+=1
+                    self._wins+=1
                 else:
                     resultoftrade = f"❗❗ Loss: {percentage_change:.2f}%"
-                    self.loses+=1
+                    self._loses+=1
 
-                accumulated_percentage_change_str = f"{self.accumulated_percentage_change:.2f}%"
+                accumulated_percentage_change_str = f"{self._accumulated_percentage_change:.2f}%"
                 send_telegram_message(f"_{self.name}_ Executed `{command}` {self.symbol} at price *{current_price}* . _{resultoftrade}_ || all time : *{accumulated_percentage_change_str}* || Time : *{timestamp_of_order}* ")
 
             else:
-                send_telegram_message(f"_{self.name}_ Executed `{command}` {self.symbol} at price *{current_price}* . last price : *{self.last_price}* || Time : *{timestamp_of_order}*")
-                self.last_buy_price = current_price
-            self.last_price = current_price
+                send_telegram_message(f"_{self.name}_ Executed `{command}` {self.symbol} at price *{current_price}* . last price : *{self._last_price}* || Time : *{timestamp_of_order}*")
+                self._last_buy_price = current_price
+            self._last_price = current_price
 
         except Exception as e:
             send_telegram_message(f"_{self.name}_ *{self.mode} Mode* Unexpected error: {e}")
@@ -523,14 +548,14 @@ class Traderbot(threading.Thread):
                     self.pause_condition.wait()
                 try:
                     current_price = self.market_monitor.get_current_price()
-                    if self.market_monitor.check_stop_loss(self.last_price, current_price, self.stop_loss_percent):
+                    if self.market_monitor.check_stop_loss(self._last_price, current_price, self.stop_loss_percent):
                         send_telegram_message(f" _{self.name}_ *Stop LOSS* 🔴! : hit by *{self.stop_loss_percent}%*")
                         self.Execute_Orders("Sell")
-                        self.skip_next_signal = 1
-                    if self.market_monitor.check_take_profit(self.last_price, current_price, self.take_profit_percent):
+                        self._skip_next_signal = 1
+                    if self.market_monitor.check_take_profit(self._last_price, current_price, self.take_profit_percent):
                         send_telegram_message(f" _{self.name}_ *TAKE PROFIT* 🟦 ! : hit by *{self.take_profit_percent}%*")
                         self.Execute_Orders("Sell")
-                        self.skip_next_signal = 1
+                        self._skip_next_signal = 1
                 except Exception as e:
                     send_telegram_message(f"{e}")
             time.sleep(10)
@@ -538,11 +563,11 @@ class Traderbot(threading.Thread):
     def manual_trigger(self,command):
         if (command == "Buy"):
             self.Execute_Orders("Buy")
-            self.skip_next_signal = 1
+            self._skip_next_signal = 1
             send_telegram_message(f" _{self.name}_ Executed manual_trigger)")
         elif(command == "Sell"):
             self.Execute_Orders("Sell")
-            self.skip_next_signal = 1
+            self._skip_next_signal = 1
             send_telegram_message(f" _{self.name}_ Executed manual_trigger)")
 
     @rate_limit(calls_per_second=5)  
@@ -849,11 +874,11 @@ def escape_markdown(text):
 def show_bot_status_func(bot_name):
     for thread in Traderbot._active_threads:
         if thread.name==bot_name:
-            cl = thread.cl
+            cl = thread._cl
             response = cl.get_tickers(category="spot", symbol=f"{thread.symbol}")
             current_price = float(response['result']['list'][0]['lastPrice'])
-            if (thread.last_command_received == "Buy" or thread.order_counter != 0 ):      
-                current_pl = ((current_price*thread.amount) / thread.last_price) - thread.amount
+            if (thread.get_last_command() == "Buy" or thread.get_order_counter() != 0 ):      
+                current_pl = ((current_price*thread.amount) / thread.get_last_price()) - thread.amount
                 current_pl = current_pl - (thread.amount * (1 * 00.1 ))
                 current_pl_percentage = (current_pl / thread.amount) * 100
                 current_pl_percentage = round(current_pl_percentage,3)
@@ -869,7 +894,7 @@ def show_bot_status_func(bot_name):
             amount_of_trade_in_rub = thread.amount * current_price
             amount_of_trade_in_rub = get_usdt_to_rub(amount_of_trade_in_rub)
             amount_of_trade_in_rub = round(amount_of_trade_in_rub,2)
-            Realized_pl = thread.amount * ((thread.accumulated_percentage_change / 100) - (thread.order_counter * 0.001 ))
+            Realized_pl = thread.amount * ((thread.get_accumulated_percentage_change() / 100) - (thread.get_order_counter() * 0.001 ))
             Realized_pl_percentage = (Realized_pl / thread.amount) * 100
             Realized_pl_percentage = round(Realized_pl_percentage,3)
             Realized_pl = Realized_pl * current_price
@@ -888,7 +913,7 @@ def show_bot_status_func(bot_name):
         - amount : {thread.amount}
         - amount RUB : {amount_of_trade_in_rub}
         - mode : {thread.mode}
-        - last_price: {thread.last_price}
+        - last_price: {thread.get_last_price()}
         - Current_price: {current_price}
         - Unrealized_PL : {current_pl} USD
         - Unrealized_PL_RUB : {current_pl_RUB} RUB
@@ -896,14 +921,14 @@ def show_bot_status_func(bot_name):
         - Realized_pl : {Realized_pl} USD
         - Realized_pl_RUB : {Realized_pl_RUB} RUB
         - Realized_pl_% : {Realized_pl_percentage} %
-        - Orders No : {thread.order_counter}
-        - Wins : {thread.wins}
-        - Losses : {thread.loses}
+        - Orders No : {thread.get_order_counter()}
+        - Wins : {thread.get_wins()}
+        - Losses : {thread.get_losses()}
         - take_profit_percent : {thread.take_profit_percent}
         - stop_loss_percent : {thread.stop_loss_percent}
         - listener_email : {escaped_email}
-        - last_command_received : {thread.last_command_received}
-        - skip_next_signal : {thread.skip_next_signal}
+        - last_command_received : {thread.get_last_command()}
+        - skip_next_signal : {thread._skip_next_signal}
 
                     ```""")
             send_telegram_message(message)
