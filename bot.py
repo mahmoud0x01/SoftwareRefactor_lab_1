@@ -174,6 +174,29 @@ class MarketAnalyzer:
             log_event('error', f"Error finding support/resistance: {e}")
             return {'support': [], 'resistance': []}
 
+class MarketDataProcessor:
+    def __init__(self, client):
+        self.client = client
+        
+    def get_market_data(self, symbol):
+        """Get current market data for a symbol"""
+        return self.client.get_tickers(category="spot", symbol=symbol)
+        
+    def get_current_price(self, symbol):
+        """Extract current price from market data"""
+        market_data = self.get_market_data(symbol)
+        return float(market_data['result']['list'][0]['lastPrice'])
+        
+    def calculate_price_change(self, symbol, reference_price):
+        """Calculate percentage change from reference price"""
+        current_price = self.get_current_price(symbol)
+        return ((current_price - reference_price) / reference_price) * 100
+        
+    def get_trade_volume(self, symbol, timeframe='24h'):
+        """Get trading volume for a symbol"""
+        market_data = self.get_market_data(symbol)
+        return float(market_data['result']['list'][0]['volume24h'])
+
 bot_token = "000000:00000" # TOKEN EXAMPLE
 chat_id = 00000000 # CHAT ID EXAMPLE
 domain_name = ""
