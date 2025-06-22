@@ -362,10 +362,76 @@ class BinanceTrader:
 
 class UserManager:
     def __init__(self):
-        self.users = []
+        self._users = []
+        self._user_settings = {}
+        self._user_activity = {}
 
     def add_user(self, chat_id):
-        self.users.append(chat_id)
+        """Add a new user to the system"""
+        if chat_id not in self._users:
+            self._users.append(chat_id)
+            self._user_settings[chat_id] = self._default_settings()
+            self._user_activity[chat_id] = {"last_active": datetime.now(), "commands": []}
+            return True
+        return False
+    
+    def remove_user(self, chat_id):
+        """Remove a user from the system"""
+        if chat_id in self._users:
+            self._users.remove(chat_id)
+            if chat_id in self._user_settings:
+                del self._user_settings[chat_id]
+            if chat_id in self._user_activity:
+                del self._user_activity[chat_id]
+            return True
+        return False
+    
+    def is_authorized(self, chat_id):
+        """Check if a user is authorized"""
+        return chat_id in self._users
+    
+    def get_user_settings(self, chat_id):
+        """Get settings for a specific user"""
+        return self._user_settings.get(chat_id, self._default_settings())
+    
+    def update_user_settings(self, chat_id, settings):
+        """Update settings for a specific user"""
+        if chat_id in self._users:
+            current_settings = self._user_settings.get(chat_id, self._default_settings())
+            current_settings.update(settings)
+            self._user_settings[chat_id] = current_settings
+            return True
+        return False
+    
+    def record_activity(self, chat_id, command):
+        """Record user activity"""
+        if chat_id in self._users:
+            self._user_activity[chat_id]["last_active"] = datetime.now()
+            self._user_activity[chat_id]["commands"].append({
+                "command": command,
+                "timestamp": datetime.now()
+            })
+            # Keep only the last 10 commands
+            self._user_activity[chat_id]["commands"] = self._user_activity[chat_id]["commands"][-10:]
+            return True
+        return False
+    
+    def get_user_activity(self, chat_id):
+        """Get activity history for a specific user"""
+        return self._user_activity.get(chat_id, {"last_active": None, "commands": []})
+    
+    def get_all_users(self):
+        """Get a list of all users"""
+        return self._users.copy()
+    
+    def _default_settings(self):
+        """Default settings for new users"""
+        return {
+            "notifications": True,
+            "language": "en",
+            "timezone": "UTC",
+            "preferred_currency": "USD"
+        }
 
 class Traderbot(threading.Thread):
     _active_threads = []  # Class-level list to store all active threads
