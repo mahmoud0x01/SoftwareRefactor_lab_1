@@ -262,7 +262,7 @@ def test_get_assets_middle_man(self, mock_http):
 **Shortcoming of code flaw:** The MessageService class acts as a middle man by simply delegating to other messaging services without adding significant value.
 
 **Description of unit test:** This test verifies that the MessageService class merely delegates to other services, confirming its role as a middle man.
-**Link to GitHub issue**: https://github.com/mahmoud0x01/SoftwareRefactor_lab_1/issues/17
+**Link to GitHub issue**: https://github.com/mahmoud0x01/SoftwareRefactor_lab_1/issues/19
 **Link to test:**
 
 ```python
