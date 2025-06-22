@@ -63,12 +63,7 @@ class OrderExecutor:
             return False, str(e)
     
     def _get_assets(self, coin):
-        r = self.client.get_wallet_balance(accountType="UNIFIED")
-        assets = {
-            asset.get('coin'): float(asset.get('availableToWithdraw', '0.0'))
-            for asset in r.get('result', {}).get('list', [])[0].get('coin', [])
-        }
-        return assets.get(coin, 0.0)
+        return get_assets(self.client, coin)
     
     def _truncate_float(self, value, precision):
         if precision > 4:
@@ -283,11 +278,7 @@ class OrderManager:
     
     def _get_assets(self, coin):
         """Get available assets for a specific coin"""
-        r = self.client.get_wallet_balance(accountType="UNIFIED")
-        for asset in r.get('result', {}).get('list', [])[0].get('coin', []):
-            if asset.get('coin') == coin:
-                return float(asset.get('availableToWithdraw', '0.0'))
-        return 0.0
+        return get_assets(self.client, coin)
     
     def _truncate_float(self, value, precision):
         """Truncate a float to a specific precision"""
@@ -354,21 +345,20 @@ def getmessagedata(storage_key):
         Body_plain = data.get("body-plain")
         return Body_plain
 
-def get_assets(coin):             # avbl = get_assets("SOL")
-    cl = HTTP(
-        api_key=BB_API_KEY,
-        api_secret=BB_SECRET_KEY,
-        recv_window=60000
-    )
-    r = cl.get_wallet_balance(accountType="UNIFIED")
-    assets = {
-        asset.get('coin') : float(asset.get('availableToWithdraw', '0.0'))
-        for asset in r.get('result', {}).get('list', [])[0].get('coin', [])
-    }
-    return assets.get(coin, 0.0)
+def get_assets(client, coin):
+    """Get available assets for a specific coin directly from the client"""
+    try:
+        r = client.get_wallet_balance(accountType="UNIFIED")
+        for asset in r.get('result', {}).get('list', [])[0].get('coin', []):
+            if asset.get('coin') == coin:
+                return float(asset.get('availableToWithdraw', '0.0'))
+        return 0.0
+    except Exception as e:
+        log_event('error', f"Error getting assets: {e}")
+        return 0.0
 
 def get_account_balance():
-    balance = get_assets("USDT")
+    balance = get_assets(HTTP(api_key=BB_API_KEY, api_secret=BB_SECRET_KEY, recv_window=60000), "USDT")
     balance = round(balance,3)
     return balance
 
