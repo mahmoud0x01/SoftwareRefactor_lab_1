@@ -197,6 +197,115 @@ class MarketDataProcessor:
         market_data = self.get_market_data(symbol)
         return float(market_data['result']['list'][0]['volume24h'])
 
+class OrderManager:
+    def __init__(self, client, symbol, amount, simulation_flag=1):
+        self.client = client
+        self.symbol = symbol
+        self.amount = amount
+        self.simulation_flag = simulation_flag
+        self.message_service = MessageService()
+    
+    def execute_buy_order(self, bot_name, mode):
+        """Execute a buy order"""
+        quantity = float(self.amount)
+        
+        # Log the order
+        self.message_service.notify_order_executed(
+            bot_name=bot_name,
+            command="Buy",
+            symbol=self.symbol,
+            price=self._get_current_price(),
+            last_price=0,  # No previous price for buy
+            timestamp=self._get_timestamp()
+        )
+        
+        # Execute the order
+        if self.simulation_flag == 0:
+            return self._place_real_order("Buy", quantity)
+        else:
+            return True, "Simulation buy order executed"
+    
+    def execute_sell_order(self, bot_name, mode, last_price):
+        """Execute a sell order"""
+        if self.simulation_flag == 0:
+            quantity = self._get_available_quantity()
+        else:
+            quantity = float(self.amount)
+        
+        # Log the order
+        current_price = self._get_current_price()
+        percentage_change = ((current_price - last_price) / last_price) * 100 if last_price > 0 else 0
+        
+        result_message = f"☘☘ Profit: +{percentage_change:.2f}%" if percentage_change > 0 else f"❗❗ Loss: {percentage_change:.2f}%"
+        
+        self.message_service.notify_order_executed(
+            bot_name=bot_name,
+            command="Sell",
+            symbol=self.symbol,
+            price=current_price,
+            last_price=last_price,
+            timestamp=self._get_timestamp()
+        )
+        
+        # Execute the order
+        if self.simulation_flag == 0:
+            return self._place_real_order("Sell", quantity)
+        else:
+            return True, "Simulation sell order executed"
+    
+    def _place_real_order(self, side, quantity):
+        """Place a real order through the API"""
+        try:
+            response = self.client.place_order(
+                category="spot",
+                symbol=self.symbol,
+                side=side,
+                orderType="Market",
+                qty=quantity,
+                marketUnit="baseCoin",
+            )
+            return True, response['retMsg']
+        except Exception as e:
+            return False, str(e)
+    
+    def _get_current_price(self):
+        """Get the current price of the symbol"""
+        response = self.client.get_tickers(category="spot", symbol=self.symbol)
+        return float(response['result']['list'][0]['lastPrice'])
+    
+    def _get_available_quantity(self):
+        """Get available quantity for trading"""
+        pair = self.symbol
+        baseCoin = pair[:pair.index('USDT')]
+        prec = self.client.get_coin_info(coin=baseCoin)['result']['rows'][0]['chains'][0]['minAccuracy']
+        quantity = self._get_assets(baseCoin)
+        return self._truncate_float(quantity, int(prec))
+    
+    def _get_assets(self, coin):
+        """Get available assets for a specific coin"""
+        r = self.client.get_wallet_balance(accountType="UNIFIED")
+        for asset in r.get('result', {}).get('list', [])[0].get('coin', []):
+            if asset.get('coin') == coin:
+                return float(asset.get('availableToWithdraw', '0.0'))
+        return 0.0
+    
+    def _truncate_float(self, value, precision):
+        """Truncate a float to a specific precision"""
+        if precision > 4:
+            precision = precision - 2
+        str_value = f"{value:.{precision + 2}f}"
+        if '.' in str_value:
+            integer_part, decimal_part = str_value.split('.')
+            truncated_decimal = decimal_part[:precision]
+            return float(f"{integer_part}.{truncated_decimal}" if truncated_decimal else integer_part)
+        return float(str_value)
+    
+    def _get_timestamp(self):
+        """Get current timestamp in GMT+7"""
+        current_utc_time = datetime.utcnow()
+        gmt_plus_7_time = current_utc_time + timedelta(hours=7)
+        return gmt_plus_7_time.strftime("%Y-%m-%d %H:%M:%S")
+
 bot_token = "000000:00000" # TOKEN EXAMPLE
 chat_id = 00000000 # CHAT ID EXAMPLE
 domain_name = ""
