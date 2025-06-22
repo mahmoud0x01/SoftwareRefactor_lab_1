@@ -875,24 +875,37 @@ class TelegramNotifier:
         return response.status_code == 200
 
 class MessageService:
-    def __init__(self):
-        self.notifier = TelegramNotifier(bot_token, chat_id)
-
-    def notify(self, message):
-        """Base method for sending notifications"""
-        return self.notifier.send_message(message)
+    def __init__(self, bot_token=None, chat_id=None):
+        # Allow custom token and chat_id or use defaults
+        self.bot_token = bot_token or bot_token
+        self.chat_id = chat_id or chat_id
+        
+    def send_message(self, message, parse_mode="Markdown"):
+        """Send a message directly without using a notifier"""
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+        payload = {
+            "chat_id": self.chat_id,
+            "text": message,
+            "parse_mode": parse_mode
+        }
+        try:
+            response = requests.post(url, json=payload)
+            return response.status_code == 200
+        except Exception as e:
+            log_event('error', f"Error sending message: {e}")
+            return False
 
     def notify_bot_started(self, bot_name, symbol, amount, mode, email):
         message = f"BOT *{bot_name}* Started ```{symbol} {amount} {mode} {email} ```"
-        return self.notify(message)
+        return self.send_message(message)
 
     def notify_order_executed(self, bot_name, command, symbol, price, last_price, timestamp):
         message = f"_{bot_name}_ Executed `{command}` {symbol} at price *{price}* . last price : *{last_price}* || Time : *{timestamp}*"
-        return self.notify(message)
+        return self.send_message(message)
 
     def notify_error(self, bot_name, mode, error_message):
         message = f"_{bot_name}_ *{mode} Mode* Unexpected error: {error_message}"
-        return self.notify(message)
+        return self.send_message(message)
 
 def get_active_threads():
     if not Traderbot._active_threads:
